@@ -2,7 +2,6 @@
 
 This repository accompanies the study **Network-Aware Synthetic Control — Bias Correction and Regularization under Interference** von Waldow (2026), M.Sc. thesis, University of Bonn.
 
-------------------------------------------------------------------------
 
 ## Replication
 
@@ -11,7 +10,6 @@ This repository accompanies the study **Network-Aware Synthetic Control — Bias
 3.  Run `master.R` for replication of Tables and Figures using the simulation results saved in `data/`.
 4.  For a re-run of the MC simulation , run the files `simulation_BAYESIAN.R` and `simulation_SCM.R`, with `master.R` being sourced first. Both write to `output/` and never overwrite the shipped results in `data/`. Even though the simulation runs in parallel, the Bayesian estimations are computational heavy and take some considerable time.
 
-------------------------------------------------------------------------
 
 ## Folder Structure
 
@@ -44,10 +42,10 @@ This repository accompanies the study **Network-Aware Synthetic Control — Bias
     └── sessionInfo.txt                   software environment
 ```
 
-------------------------------------------------------------------------
+---
 
 All R files were run on R version 4.4.2 on Windows 11 x64. 
 
-------------------------------------------------------------------------
+---
 
 Frederik von Waldow
