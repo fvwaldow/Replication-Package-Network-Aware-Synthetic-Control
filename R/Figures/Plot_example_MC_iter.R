@@ -799,12 +799,12 @@ mods <- list("SCM" = scm_synth, "BSCM" = fit_plain,
 
 save_fig("example_synth_paths.pdf",
          nascPlot(mods, show_ci = TRUE, ci_models = c("SCM", "NASC"),
-                  panels = "path", show_legend = FALSE), show_legend = FALSE)
+                  panels = "path", show_legend = TRUE), show_legend = TRUE)
 save_fig("example_effects.pdf",
          nascPlot(mods, show_ci = TRUE, ci_models = c("SCM", "NASC"),
-                  panels = "effect", show_legend = FALSE,
+                  panels = "effect", show_legend = TRUE,
                   true_att = att_true),
-         show_legend = FALSE)
+         show_legend = TRUE)
 save_fig("example_indirect.pdf",
          nascPlot(mods, panels = "indirect",
                   indirect_models = c("BC", "NASC", "CR"),

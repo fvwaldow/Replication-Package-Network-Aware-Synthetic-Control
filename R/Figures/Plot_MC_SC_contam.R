@@ -225,5 +225,5 @@ save_panel <- function(p_val, t_val, show_legend = FALSE) {
 }
 
 save_panel(0,   30, show_legend = TRUE)
-save_panel(0.1, 30)
+save_panel(0.1, 30, show_legend = TRUE)
 save_panel(0.4, 30, show_legend = TRUE)

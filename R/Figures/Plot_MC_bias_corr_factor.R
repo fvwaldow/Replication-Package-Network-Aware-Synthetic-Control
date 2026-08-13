@@ -205,6 +205,6 @@ save_panel <- function(p_val, t_val, show_legend = FALSE) {
   draw_panel(p_val, t_val, show_legend = show_legend)
 }
 
-invisible(save_panel(0,   30))
-invisible(save_panel(0.1, 30))
+invisible(save_panel(0,   30, show_legend = TRUE))
+invisible(save_panel(0.1, 30, show_legend = TRUE))
 invisible(save_panel(0.4, 30, show_legend = TRUE))
