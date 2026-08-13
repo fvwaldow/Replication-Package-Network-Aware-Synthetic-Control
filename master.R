@@ -43,3 +43,5 @@ run_all <- function() {
   for (s in scripts) source(file.path(dir_R, s), local = new.env())
   invisible(NULL)
 }
+
+run_all()
