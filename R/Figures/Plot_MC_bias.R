@@ -1,5 +1,11 @@
 # MC results - Box Plots of bias
 
+## ---------------------------------------------------------------------
+## Paths, shipped data and output directories come from 00_master.R.
+## Run  source("00_master.R")  in a fresh session before this script.
+## ---------------------------------------------------------------------
+if (!exists("directory")) stop("Run 00_master.R first.")
+
 library(dplyr)
 
 WHISKER_COEF  <- 1.5
@@ -14,9 +20,9 @@ res$estimator[res$estimator == "plain_est"] <- "bsynth_sc"
 
 if (file.exists(results_SCM)) {
   res_scm <- drop_list_cols(readRDS(results_SCM))
-  
+
   est_in <- sort(unique(res_scm$estimator))
-  
+
   if ("sc_classic" %in% est_in) {
     keep <- "sc_classic"
   } else if ("plain_est" %in% est_in) {
@@ -24,12 +30,14 @@ if (file.exists(results_SCM)) {
   } else if (length(est_in) == 1L) {
     keep <- est_in
   } else {
-    stop(".")
+    stop("Cannot identify the SCM estimator in ", results_SCM,
+         " - found: ", paste(est_in, collapse = ", "),
+         ". Set `keep` manually.")
   }
-  
+
   res_scm <- res_scm[res_scm$estimator == keep, , drop = FALSE]
   res_scm$estimator <- "sc_classic"
-  
+
   res <- res[res$estimator != "sc_classic", , drop = FALSE]
   res <- dplyr::bind_rows(res, res_scm)
 }
@@ -125,18 +133,18 @@ legend_glyph <- function(x, y, col) {
 draw_panel <- function(p_val, t_val, show_legend = TRUE) {
   d <- agg[agg$ws_p == p_val & agg$T_val == t_val, , drop = FALSE]
   if (nrow(d) == 0) return(invisible(NULL))
-  
+
   if (show_legend) layout(matrix(c(1, 2), nrow = 2), heights = c(6, 0.7))
   par(mar = c(2.8, 3.8, 0.6, 0.8), mgp = c(2, 0.7, 0), family = PLOT_FONT)
-  
+
   plot(NA, xlim = rho_lim, ylim = bias_lim,
        xlab = expression(rho), ylab = expression(hat(tau) - tau), xaxt = "n", yaxt = "n")
-  
+
   axis(1, at = rho_levels, labels = formatC(rho_levels, format = "g"))
   axis(2, at = y_at, las = 1)
-  
+
   abline(v = rho_levels, h = y_at, col = "grey90", lwd = 0.6)
-  
+
   for (est in est_present) {
     di <- d[d$estimator == est, , drop = FALSE]
     di <- di[order(di$rho), , drop = FALSE]
@@ -146,7 +154,7 @@ draw_panel <- function(p_val, t_val, show_legend = TRUE) {
     lines(sm$x, sm$y, col = adjustcolor(cols[[est]], alpha.f = 0),
           lwd = 1.4, lty = 1)
   }
-  
+
   for (est in est_present) {
     di <- d[d$estimator == est, , drop = FALSE]
     if (nrow(di) == 0L) next
@@ -164,7 +172,7 @@ draw_panel <- function(p_val, t_val, show_legend = TRUE) {
       }
     }
   }
-  
+
   if (show_legend) {
     par(mar = c(0, 0, 0, 0), family = PLOT_FONT)
     plot.new()
