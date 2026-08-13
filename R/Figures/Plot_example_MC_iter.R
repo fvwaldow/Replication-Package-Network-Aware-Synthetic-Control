@@ -1,9 +1,9 @@
-rm(list = ls())
+# Single MC iteration - SCM, BSCM, CR, BC, NASC
+
 library(nasc)
 library(dplyr)
 library(igraph)
 library(Synth)
-source("C:/Users/frede/Desktop/Master Thesis/Simulation_R/NASC Estimator/dgp_functions.R")
 
 N        <- 15
 T_0      <- 30
@@ -31,7 +31,7 @@ stan_iter    <- 1000L
 stan_warmup  <- 500L
 stan_control <- list(adapt_delta = 0.95, max_treedepth = 10)
 
-PLOT_FONT   <- "Times"
+if (!exists("PLOT_FONT")) PLOT_FONT <- "Times"
 PANEL_MAR   <- c(2.8, 3.8, 0.6, 0.8)
 PANEL_MGP   <- c(2, 0.7, 0)
 LEGEND_H    <- 0.7
@@ -51,6 +51,8 @@ nasc_palette <- c(
   bc_est     = "#3182BD",
   reg_est    = "#6BAED6"
 )
+
+# Plotting functions
 
 .nasc_model_colors <- function(model_names, colors = NULL) {
   out <- vapply(model_names, function(nm) {
@@ -89,24 +91,24 @@ nasc_palette <- c(
 
 fit_synth_unit <- function(df, treated_id, donor_ids, intervention_time,
                            use_covariates = TRUE) {
-
+  
   dfS <- as.data.frame(df)
   dfS$id <- as.character(dfS$id)
-
+  
   key <- unique(dfS$id)
   num_try <- suppressWarnings(as.numeric(key))
   key <- if (!any(is.na(num_try))) key[order(num_try)] else sort(key)
-
+  
   dfS$..unit_num  <- match(dfS$id, key)
   dfS$..unit_name <- dfS$id
-
+  
   all_times <- sort(unique(dfS$time))
   pre_times <- all_times[all_times < intervention_time]
-
+  
   sp    <- lapply(pre_times, function(t) list("Y", t, "mean"))
   preds <- if (use_covariates) c("X1", "X2") else NULL
   n_pred <- length(sp) + length(preds)
-
+  
   suppressMessages(invisible(utils::capture.output({
     dp <- Synth::dataprep(
       foo                   = dfS,
@@ -126,13 +128,13 @@ fit_synth_unit <- function(df, treated_id, donor_ids, intervention_time,
     out <- Synth::synth(data.prep.obj = dp,
                         custom.v = rep(1 / n_pred, n_pred))
   })))
-
+  
   w <- as.numeric(out$solution.w)
   names(w) <- key[as.integer(rownames(out$solution.w))]
-
+  
   y_obs   <- as.numeric(dp$Y1plot)
   y_synth <- as.numeric(dp$Y0plot %*% out$solution.w)
-
+  
   list(
     unit    = as.character(treated_id),
     times   = all_times,
@@ -148,30 +150,30 @@ fit_synth_unit <- function(df, treated_id, donor_ids, intervention_time,
 synth_permutation_inference <- function(fit_tr, placebo_fits,
                                         intervention_time,
                                         ci_width = 0.95) {
-
+  
   keep <- !vapply(placebo_fits, is.null, logical(1))
   placebo_fits <- placebo_fits[keep]
-
+  
   times <- fit_tr$times
   pre   <- times < intervention_time
-
+  
   r1_pre  <- .rmspe(fit_tr$gap[pre])
   r1_post <- .rmspe(fit_tr$gap[!pre])
   ratio1  <- r1_post / r1_pre
-
+  
   G <- vapply(placebo_fits, `[[`, numeric(length(times)), "gap")
   rj_pre  <- apply(G[pre, , drop = FALSE],  2, .rmspe)
   rj_post <- apply(G[!pre, , drop = FALSE], 2, .rmspe)
   ratios  <- rj_post / rj_pre
   names(ratios) <- vapply(placebo_fits, `[[`, character(1), "unit")
-
+  
   p_value <- mean(c(ratios, ratio1) >= ratio1)
-
+  
   Gs   <- sweep(G, 2, rj_pre, "/")
   a    <- (1 - ci_width) / 2
   q_lo <- apply(Gs, 1, stats::quantile, probs = a,     names = FALSE)
   q_hi <- apply(Gs, 1, stats::quantile, probs = 1 - a, names = FALSE)
-
+  
   list(
     p_value        = p_value,
     ratio_treated  = ratio1,
@@ -187,15 +189,15 @@ synth_permutation_inference <- function(fit_tr, placebo_fits,
 
 synthSCM <- function(df, treated_id, intervention_time,
                      ci_width = 0.95, use_covariates = TRUE) {
-
+  
   ids <- as.character(unique(df$id))
   num_try <- suppressWarnings(as.numeric(ids))
   ids <- if (!any(is.na(num_try))) ids[order(num_try)] else sort(ids)
   donor_ids <- setdiff(ids, as.character(treated_id))
-
+  
   fit_tr <- fit_synth_unit(df, treated_id, donor_ids,
                            intervention_time, use_covariates)
-
+  
   placebo_fits <- lapply(donor_ids, function(j) {
     tryCatch(
       fit_synth_unit(df, j, setdiff(donor_ids, j),
@@ -203,10 +205,10 @@ synthSCM <- function(df, treated_id, intervention_time,
       error = function(e) NULL
     )
   })
-
+  
   inf <- synth_permutation_inference(fit_tr, placebo_fits,
                                      intervention_time, ci_width)
-
+  
   pd <- data.frame(
     time    = fit_tr$times,
     Y       = fit_tr$y_obs,
@@ -219,7 +221,7 @@ synthSCM <- function(df, treated_id, intervention_time,
   pd$UB <- pd$Y - pd$tau_LB
   pd <- pd[, c("time", "Y", "y_synth", "LB", "UB",
                "tau", "tau_LB", "tau_UB")]
-
+  
   obj <- list(
     plotData         = pd,
     interventionTime = intervention_time,
@@ -244,7 +246,7 @@ nascWeightSCM <- function(models,
                           scale       = 2,
                           fill_alpha  = 0.2,
                           max_donors  = NULL) {
-
+  
   per_model <- lapply(names(models), function(m_name) {
     mod  <- models[[m_name]]
     priv <- mod$.__enclos_env__$private
@@ -253,7 +255,7 @@ nascWeightSCM <- function(models,
     colnames(w_mat) <- donor_ids
     list(name = m_name, w_mat = w_mat, donors = donor_ids)
   })
-
+  
   all_donors <- unique(c(unlist(lapply(per_model, `[[`, "donors")),
                          names(synth_w), names(true_w)))
   num_attempt <- suppressWarnings(as.numeric(all_donors))
@@ -270,7 +272,7 @@ nascWeightSCM <- function(models,
   donor_plot <- donor_order
   n_d <- length(donor_plot)
   n_m <- length(per_model)
-
+  
   dens_grid <- vector("list", n_d)
   for (i in seq_len(n_d)) {
     donor <- donor_plot[i]
@@ -280,7 +282,7 @@ nascWeightSCM <- function(models,
       } else NULL
     })
   }
-
+  
   all_x <- unlist(lapply(dens_grid, function(row)
     unlist(lapply(row, function(d) if (!is.null(d)) d$x else NULL))))
   x_range <- range(c(all_x, synth_w, true_w, 0), na.rm = TRUE)
@@ -290,29 +292,29 @@ nascWeightSCM <- function(models,
     if (length(ys)) max(ys) else 0
   }, numeric(1)))
   if (!is.finite(max_y) || max_y <= 0) max_y <- 1
-
+  
   ridge_h  <- scale * max_y
   step     <- ridge_h * (1 - overlap)
   ylim_top <- step * n_d + ridge_h *0.8
   ylim_bot <- 20
-
+  
   cols  <- .nasc_model_colors(names(models), colors)
   fills <- grDevices::adjustcolor(cols, alpha.f = fill_alpha)
   synth_col <- "#E8442A"
   true_col  <- "gray40"
-
+  
   op <- graphics::par(no.readonly = TRUE)
   on.exit({ graphics::par(op); graphics::layout(1) })
-
+  
   if (isTRUE(show_legend)) {
     graphics::layout(matrix(c(1, 2), nrow = 2), heights = c(6, LEGEND_H))
   }
   graphics::par(mar = PANEL_MAR, mgp = PANEL_MGP, family = font_family)
-
+  
   plot(NA, xlim = x_range, ylim = c(ylim_bot, ylim_top),
        xlab = expression(hat(gamma[j])), ylab = "Donor Unit j", yaxt = "n")
   graphics::axis(2, at = step * seq_len(n_d), labels = donor_plot, las = 1)
-
+  
   for (i in seq(n_d, 1L, by = -1L)) {
     baseline <- step * i
     graphics::segments(x_range[1], baseline, x_range[2], baseline,
@@ -340,7 +342,7 @@ nascWeightSCM <- function(models,
     }
   }
   graphics::box()
-
+  
   extra_lab <- synth_label
   extra_lty <- 1
   extra_col <- synth_col
@@ -350,7 +352,7 @@ nascWeightSCM <- function(models,
     extra_col <- c(extra_col, true_col)
   }
   n_e <- length(extra_lab)
-
+  
   if (isTRUE(show_legend)) {
     graphics::par(mar = c(0, 0, 0, 0), family = font_family)
     graphics::plot.new()
@@ -364,7 +366,7 @@ nascWeightSCM <- function(models,
                      col     = c(rep(NA, n_m), extra_col),
                      horiz   = TRUE, bty = "n", cex = LEGEND_CEX)
   }
-
+  
   rows <- list()
   for (donor in rev(donor_order)) {
     for (pm in per_model) {
@@ -405,17 +407,17 @@ nascPlot <- function(models, show_ci = FALSE,
                      indirect_legend = c("drawn", "all"),
                      true_att        = NULL,
                      true_indirect   = NULL) {
-
+  
   indirect_pre    <- match.arg(indirect_pre)
   indirect_legend <- match.arg(indirect_legend)
-
+  
   panels <- match.arg(panels, c("path", "effect", "indirect"),
                       several.ok = TRUE)
-
+  
   mod1 <- models[[1]]
-
+  
   intervention_time <- mod1$interventionTime
-
+  
   combined_list <- lapply(names(models), function(m_name) {
     df <- models[[m_name]]$plotData
     df <- as.data.frame(df)
@@ -425,21 +427,21 @@ nascPlot <- function(models, show_ci = FALSE,
     df
   })
   names(combined_list) <- names(models)
-
+  
   n_models <- length(models)
   cols <- .nasc_model_colors(names(models), colors)
-
+  
   ci_draw <- if (is.null(ci_models)) rep(TRUE, n_models) else
     names(models) %in% ci_models
-
+  
   op <- graphics::par(no.readonly = TRUE)
   on.exit({ graphics::par(op); graphics::layout(1) }, add = TRUE)
-
+  
   obs_df <- combined_list[[1]][, c("time_var", "outcome_var")]
   xrng   <- range(obs_df$time_var, na.rm = TRUE)
-
+  
   if ("path" %in% panels) {
-
+    
     y_vals <- c(obs_df$outcome_var,
                 unlist(lapply(combined_list, function(d) d$y_synth)))
     if (isTRUE(show_ci)) {
@@ -448,17 +450,17 @@ nascPlot <- function(models, show_ci = FALSE,
                                 function(d) c(d$LB, d$UB))))
     }
     yrng <- range(y_vals, na.rm = TRUE)
-
+    
     if (isTRUE(show_legend)) {
       graphics::layout(matrix(c(1, 2), nrow = 2), heights = c(6, LEGEND_H))
     }
     graphics::par(mar = PANEL_MAR, mgp = PANEL_MGP, family = font_family)
-
+    
     plot(obs_df$time_var, obs_df$outcome_var, type = "n",
          xlim = xrng, ylim = yrng,
          xlab = "t", ylab = "y")
     graphics::grid(lty = 1, col = "grey90", lwd = LW_GRID)
-
+    
     if (isTRUE(show_ci)) {
       for (i in seq_len(n_models)) {
         if (!ci_draw[i]) next
@@ -469,7 +471,7 @@ nascPlot <- function(models, show_ci = FALSE,
                           border = NA)
       }
     }
-
+    
     graphics::abline(v = intervention_time, lty = 2, col = "gray30",
                      lwd = LW_RULE)
     graphics::lines(obs_df$time_var, obs_df$outcome_var,
@@ -480,7 +482,7 @@ nascPlot <- function(models, show_ci = FALSE,
                       col = cols[i], lwd = LW_PATH, lty = 1)
     }
     graphics::box()
-
+    
     if (isTRUE(show_legend)) {
       graphics::par(mar = c(0, 0, 0, 0), family = font_family)
       graphics::plot.new()
@@ -493,7 +495,7 @@ nascPlot <- function(models, show_ci = FALSE,
                        horiz  = TRUE, bty = "n", cex = LEGEND_CEX)
     }
   }
-
+  
   if ("effect" %in% panels) {
     y_vals2 <- unlist(lapply(combined_list, function(d) d$tau))
     if (isTRUE(show_ci)) {
@@ -501,18 +503,18 @@ nascPlot <- function(models, show_ci = FALSE,
                    unlist(lapply(combined_list[ci_draw],
                                  function(d) c(d$tau_LB, d$tau_UB))))
     }
-
+    
     effect_y_by <- 1
     yrng2 <- c(-1.5, 6.5)
     y_at2 <- seq(ceiling(yrng2[1] / effect_y_by) * effect_y_by,
                  floor(yrng2[2]   / effect_y_by) * effect_y_by,
                  by = effect_y_by)
-
+    
     if (isTRUE(show_legend)) {
       graphics::layout(matrix(c(1, 2), nrow = 2), heights = c(6, LEGEND_H))
     }
     graphics::par(mar = PANEL_MAR, mgp = PANEL_MGP, family = font_family)
-
+    
     plot(combined_list[[1]]$time_var, combined_list[[1]]$tau, type = "n",
          xlim = xrng, ylim = yrng2,
          xlab = "t", ylab = expression(hat(tau)),
@@ -530,7 +532,7 @@ nascPlot <- function(models, show_ci = FALSE,
                           border = NA)
       }
     }
-
+    
     graphics::abline(h = 0, lty = 1, col = "grey70", lwd = LW_RULE)
     graphics::abline(v = intervention_time, lty = 2, col = "gray30",
                      lwd = LW_RULE)
@@ -543,7 +545,7 @@ nascPlot <- function(models, show_ci = FALSE,
       graphics::lines(d$time_var, d$tau, col = cols[i], lwd = LW_PATH)
     }
     graphics::box()
-
+    
     if (isTRUE(show_legend)) {
       graphics::par(mar = c(0, 0, 0, 0), family = font_family)
       graphics::plot.new()
@@ -555,13 +557,13 @@ nascPlot <- function(models, show_ci = FALSE,
                        horiz  = TRUE, bty = "n", cex = LEGEND_CEX)
     }
   }
-
+  
   if ("indirect" %in% panels) {
     get_ind <- .resolve_indirect_matrix()
-
+    
     ind_draw <- if (is.null(indirect_models)) rep(TRUE, n_models) else
       names(models) %in% indirect_models
-
+    
     ind_list <- vector("list", n_models)
     for (i in seq_len(n_models)) {
       if (!ind_draw[i]) next
@@ -570,9 +572,9 @@ nascPlot <- function(models, show_ci = FALSE,
       ind_list[i] <- list(get_ind(m, pre = indirect_pre))
     }
     has_ind <- !vapply(ind_list, is.null, logical(1))
-
+    
     if (any(has_ind)) {
-
+      
       yrng3 <- if (!is.null(indirect_ylim)) {
         indirect_ylim
       } else {
@@ -581,12 +583,12 @@ nascPlot <- function(models, show_ci = FALSE,
                 if (!is.null(true_indirect)) as.numeric(true_indirect)),
               na.rm = TRUE)
       }
-
+      
       if (isTRUE(show_legend)) {
         graphics::layout(matrix(c(1, 2), nrow = 2), heights = c(6, LEGEND_H))
       }
       graphics::par(mar = PANEL_MAR, mgp = PANEL_MGP, family = font_family)
-
+      
       plot(NA, xlim = xrng, ylim = yrng3,
            xlab = "t", ylab = expression(hat(delta)[j]))
       graphics::grid(lty = 1, col = "grey90", lwd = LW_GRID)
@@ -600,7 +602,7 @@ nascPlot <- function(models, show_ci = FALSE,
                              col = "gray30", lty = 2, lwd = LW_RULE)
         }
       }
-
+      
       for (i in seq_len(n_models)) {
         d <- ind_list[[i]]
         if (is.null(d)) next
@@ -611,9 +613,9 @@ nascPlot <- function(models, show_ci = FALSE,
                           lwd = LW_DENS, type = ltype, pch = 16)
         }
       }
-
+      
       graphics::box()
-
+      
       if (isTRUE(show_legend)) {
         leg_keep <- if (identical(indirect_legend, "all")) {
           rep(TRUE, n_models)
@@ -631,9 +633,11 @@ nascPlot <- function(models, show_ci = FALSE,
       }
     }
   }
-
+  
   invisible(NULL)
 }
+
+# Single MC Iterations
 
 W_ws <- generate_watts_strogatz_matrix(N = N, k = 2, p = ws_p, seed = 13)
 
@@ -677,7 +681,7 @@ fit_plain <- nascSynth$new(
   ci_width        = 0.95
 )
 invisible(utils::capture.output(suppressMessages(
-  fit_plain$fit(n_samples = 50, cores = 12,
+  fit_plain$fit(n_samples = 50, cores = N_WORKERS,
                 iter = stan_iter, warmup = stan_warmup, control = stan_control))))
 
 fit_pen <- nascSynth$new(
@@ -697,7 +701,7 @@ fit_pen <- nascSynth$new(
   lambda_train_frac = lambda_train_frac
 )
 invisible(utils::capture.output(suppressMessages(
-  fit_pen$fit(n_samples = 50, cores = 12,
+  fit_pen$fit(n_samples = 50, cores = N_WORKERS,
               iter = stan_iter, warmup = stan_warmup, control = stan_control))))
 
 fit_bc <- nascSynth$new(
@@ -715,7 +719,7 @@ fit_bc <- nascSynth$new(
   ci_width        = 0.95
 )
 invisible(utils::capture.output(suppressMessages(
-  fit_bc$fit(n_samples = 25, cores = 12,
+  fit_bc$fit(n_samples = 25, cores = N_WORKERS,
              iter = stan_iter, warmup = stan_warmup, control = stan_control))))
 
 fit_nasc <- nascSynth$new(
@@ -735,7 +739,7 @@ fit_nasc <- nascSynth$new(
   lambda_train_frac = lambda_train_frac
 )
 invisible(utils::capture.output(suppressMessages(
-  fit_nasc$fit(n_samples = 25, cores = 12,
+  fit_nasc$fit(n_samples = 25, cores = N_WORKERS,
                iter = stan_iter, warmup = stan_warmup, control = stan_control))))
 
 models_list <- list(
@@ -778,18 +782,17 @@ w_table <- nascWeightSCM(list("BSCM" = fit_plain, "NASC" = fit_nasc),
                          synth_w = scm_synth$weights,
                          true_w  = true_w)
 
-FIG_DIR <- "figures"
-dir.create(FIG_DIR, recursive = TRUE, showWarnings = FALSE)
-
 save_fig <- function(fname, expr, plot_h = 2, width = 6,
                      show_legend = TRUE) {
   dev_h <- if (show_legend) plot_h * (6 + LEGEND_H) / 6 else plot_h
-  pdf(file.path(FIG_DIR, fname), width = width, height = dev_h,
+  pdf(file.path(dir_fig, fname), width = width, height = dev_h,
       pointsize = 9, family = PLOT_FONT)
   on.exit(dev.off(), add = TRUE)
   force(expr)
   invisible(NULL)
 }
+
+
 
 mods <- list("SCM" = scm_synth, "BSCM" = fit_plain,
              "CR" = fit_pen, "BC" = fit_bc, "NASC" = fit_nasc)

@@ -1,6 +1,4 @@
-rm(list = ls())
-
-setwd("C:\\Users\\frede\\Desktop\\Master Thesis\\Simulation_R")
+# Monte Carlo Simulation - Bayesian (NASC, BC. CR, BSCM)
 
 library(nasc)
 library(dplyr)
@@ -10,19 +8,12 @@ library(tibble)
 library(future.apply)
 library(igraph)
 
-# Path to DGP functions
-DGP_CANDIDATES <- c(
-  "C:\\Users\\frede\\Desktop\\Master Thesis\\Simulation_R\\NASC Estimator\\dgp_functions.R"
-)
-DGP_PATH <- DGP_CANDIDATES[file.exists(DGP_CANDIDATES)][1]
-source(DGP_PATH)
-
 B <- 1000
-T_seq <- c(30,60,90) # T_0 value
-N_seq <- c(15) # donors + treated
+T_seq <- c(30,60,90)
+N_seq <- c(15)
 rho_seq <- c(0.8, 0.6, 0.4, 0.2, 0, -0.2, -0.4, -0.6, -0.8)
 
-# Watts-Strogatz network parameters.
+# Watts-Strogatz network
 k_seq                    <- c(2)
 p_seq                    <- c(0, 0.1, 0.4)
 seed_w                   <- 13
@@ -32,7 +23,6 @@ dgp_type                 <- "SAR"
 treated_idx              <- 1
 beta                     <- c(1.0, 0.5)
 theta                    <- c(0.3, 0.2)
-# Treatment shock distribution: tau_t ~ N(delta_mean, delta_sd^2).
 delta_mean               <- 5
 delta_sd                 <- 1
 sigma_u                  <- 0.5
@@ -41,37 +31,34 @@ x_sd                     <- 1
 X_mean                   <- c(0.0, 0.0)
 twin_target              <- "cleanest"
 
-# Planted weight profile, low |s| -> high |s|. Sums to 1.
+# weights, low |s| -> high |s|
 weight_profile           <- c(0.075, 0.075, 0.150, 0.150, 0.250, 0.300)
 
-# Penalty strength: CV grid and train/validation split of the pre-period.
 lambda_cv_grid           <- c(0, exp(seq(log(0.05), log(50), length.out = 20)))
 lambda_train_frac        <- 0.8
 
-# Sampler settings
+# sampler settings
 stan_iter                <- 1000L
 stan_warmup              <- 500L
 stan_control             <- list(adapt_delta = 0.95, max_treedepth = 10)
 
 # dataset export
-DATA_DIR       <- "data_ex_rho_2"
-RESULTS_RDS    <- "data_ex_rho_2.rds"
+DATA_DIR       <- file.path(directory, "output", "data_ex_rho_2")
+RESULTS_RDS    <- file.path(directory, "output", "data_ex_rho_2.rds")
 save_datasets  <- TRUE
 save_csv       <- TRUE
 dir.create(DATA_DIR, recursive = TRUE, showWarnings = FALSE)
 
-# estimators: NASC engine only, rho set exogenously inside run_one_rep
+# estimators
 estimators <- list(
   plain_est  = list(engine = "nasc", bias_correction = FALSE, nasc_penalty = FALSE),
   bc_est     = list(engine = "nasc", bias_correction = TRUE,  nasc_penalty = FALSE),
   reg_est    = list(engine = "nasc", bias_correction = FALSE, nasc_penalty = TRUE),
   bc_reg_est = list(engine = "nasc", bias_correction = TRUE,  nasc_penalty = TRUE)
 )
-# ===========================================================================
-#                              MC SIMULATION
-# ===========================================================================
+# MC simulation
 
-# ---- functions ----
+# functions
 extract_weights_aligned <- function(fit_summary, donor_idx) {
   w_tbl <- fit_summary$weights
   if (is.null(w_tbl) || nrow(w_tbl) == 0L) return(NULL)
@@ -123,10 +110,10 @@ dataset_basename <- function(T, rep) {
   sprintf("dataset_T%d_rep%03d", T, rep)
 }
 
-# worker function: one replicate, all estimators
+# worker: one replicate
 run_one_rep <- function(b, cell, W, estimators, dgp_type = "SAR",
                         data_dir = NULL, save_datasets = FALSE, save_csv = TRUE) {
-
+  
   sim <- generate_data_ws_planted(
     W              = W,
     type           = dgp_type,
@@ -147,20 +134,20 @@ run_one_rep <- function(b, cell, W, estimators, dgp_type = "SAR",
     weight_profile = cell$weight_profile
   )
   df <- sim$df
-
+  
   att_true_realized <- mean(sim$true_att)
-
+  
   w_star_donor <- sim$w_star_donor
   donor_idx    <- sim$donor_idx
   s_abs        <- if (!is.null(sim$contam)) sim$contam$s_abs else rep(0, length(donor_idx))
-
+  
   covariates <- df %>% dplyr::select(time, id, X1, X2)
-
+  
   rows <- vector("list", length(estimators))
   for (i in seq_along(estimators)) {
     est_name <- names(estimators)[i]
     cfg      <- estimators[[i]]
-
+    
     t0 <- proc.time()[["elapsed"]]
     fit_ok <- tryCatch({
       s_obj <- switch(cfg$engine,
@@ -174,7 +161,7 @@ run_one_rep <- function(b, cell, W, estimators, dgp_type = "SAR",
                           covariates      = covariates,
                           W               = W,
                           spatial_model   = "exogenous",
-                          rho             = cell$rho,   # exogenous: true DGP rho, no plug-in rho-hat
+                          rho             = cell$rho,
                           bias_correction = cfg$bias_correction,
                           nasc_penalty    = cfg$nasc_penalty,
                           ci_width        = 0.95
@@ -196,7 +183,7 @@ run_one_rep <- function(b, cell, W, estimators, dgp_type = "SAR",
     },
     error = function(e) list(s = NULL, ok = FALSE, msg = conditionMessage(e)))
     rt <- proc.time()[["elapsed"]] - t0
-
+    
     base <- data.frame(
       ws_k         = cell$ws_k,
       ws_p         = cell$ws_p,
@@ -210,21 +197,21 @@ run_one_rep <- function(b, cell, W, estimators, dgp_type = "SAR",
       runtime_s    = rt,
       stringsAsFactors = FALSE
     )
-
+    
     if (fit_ok$ok) {
       att <- fit_ok$s$att
       lo  <- as.numeric(att["lower"])
       hi  <- as.numeric(att["upper"])
-
+      
       w_hat <- extract_weights_aligned(fit_ok$s, donor_idx)
       wmet  <- weight_recovery_metrics(w_hat, w_star_donor, s_abs)
-
+      
       lam_used <- NA_real_
       if (isTRUE(cfg$nasc_penalty)) {
         lam_used <- tryCatch(as.numeric(fit$lambdaCV()$lambda),
                              error = function(e) NA_real_)
       }
-
+      
       rows[[i]] <- cbind(base, data.frame(
         att_hat       = as.numeric(att["mean"]),
         att_sd        = as.numeric(att["sd"]),
@@ -270,8 +257,7 @@ run_one_rep <- function(b, cell, W, estimators, dgp_type = "SAR",
     }
   }
   out <- dplyr::bind_rows(rows)
-
-  # export this dataset together with its per-draw estimation results
+  
   if (isTRUE(save_datasets) && !is.null(data_dir)) {
     cdir  <- cell_data_dir(data_dir, dgp_type, cell$ws_k, cell$ws_p,
                            cell$N, cell$rho)
@@ -285,19 +271,14 @@ run_one_rep <- function(b, cell, W, estimators, dgp_type = "SAR",
                 row.names = FALSE)
     }
   }
-
+  
   out
 }
 
-# ---- run ----
-# parallel plan
+# run
 try(future:::ClusterRegistry("stop"), silent = TRUE)
 gc()
 
-# Each worker runs a Stan/HMC sampler and is memory-heavy: too many at once
-# exhausts RAM, the OS kills a worker, and future reports a FutureInterruptError.
-# Keep this modest; raise it only while watching memory, lower it to 4 if a
-# worker still dies.
 max_workers <- 6L
 n_workers <- min(max_workers, max(1L, parallel::detectCores() - 1L))
 options(future.globals.maxSize = 2 * 1024^3)
@@ -305,7 +286,7 @@ options(future.globals.maxSize = 2 * 1024^3)
 plan(multisession, workers = n_workers)
 cat(sprintf("%d cores\n", n_workers))
 
-# build weight matrices (serial, cheap)
+# build weight matrices
 weights_list <- array(list(),
                       dim = c(length(k_seq), length(p_seq), length(N_seq)))
 
@@ -319,8 +300,7 @@ for (ki in seq_along(k_seq)) {
         seed = seed_w
       )
       weights_list[[ki, pi, j]] <- W_ws
-
-      # persist W; pre-create rho subfolders
+      
       if (save_datasets) {
         net_dir <- file.path(DATA_DIR, .net_tag(dgp_type, k_seq[ki],
                                                 p_seq[pi], N_seq[j]))
@@ -339,7 +319,7 @@ for (ki in seq_along(k_seq)) {
   }
 }
 
-# main loop: cells serial, replicates parallel
+# main loop
 results <- list()
 
 mc_t_start <- proc.time()[["elapsed"]]
@@ -348,7 +328,7 @@ for (ki in seq_along(k_seq)) {
   for (pi in seq_along(p_seq)) {
     for (j in seq_along(N_seq)) {
       W_cell <- weights_list[[ki, pi, j]]
-
+      
       for (t in seq_along(T_seq)) {
         for (r in seq_along(rho_seq)) {
           cell <- list(
@@ -374,19 +354,18 @@ for (ki in seq_along(k_seq)) {
             stan_warmup       = stan_warmup,
             stan_control      = stan_control
           )
-
+          
           cat(sprintf("Cell k=%d p=%.2f j=%d t=%d r=%d : %d reps on %d cores\n",
                       k_seq[ki], p_seq[pi], j, t, r, B, n_workers))
           t_cell <- proc.time()[["elapsed"]]
-
+          
           cell_rows <- tryCatch(
             future_lapply(
               seq_len(B),
               function(b) {
                 if (!exists("generate_data_ws_planted", envir = globalenv(), inherits = FALSE)) {
-                  source(DGP_PATH)
+                  source(dgp_path)
                 }
-                # resume: reuse a rep already saved to disk, skip recompute
                 if (isTRUE(save_datasets)) {
                   rp <- file.path(
                     cell_data_dir(DATA_DIR, dgp_type, cell$ws_k, cell$ws_p, cell$N, cell$rho),
@@ -406,7 +385,7 @@ for (ki in seq_along(k_seq)) {
               future.seed     = 1234L,
               future.packages = c("nasc", "dplyr", "tidyr"),
               future.globals  = c("run_one_rep", "cell", "W_cell",
-                                  "estimators", "dgp_type", "DGP_PATH",
+                                  "estimators", "dgp_type", "dgp_path",
                                   "extract_weights_aligned",
                                   "weight_recovery_metrics",
                                   "DATA_DIR", "save_datasets", "save_csv",
@@ -418,9 +397,9 @@ for (ki in seq_along(k_seq)) {
               stop("MC error", call. = FALSE)
             }
           )
-
+          
           cat(sprintf("%.1fs\n", proc.time()[["elapsed"]] - t_cell))
-
+          
           results[[length(results) + 1L]] <- dplyr::bind_rows(cell_rows)
           saveRDS(dplyr::bind_rows(results), RESULTS_RDS)
           gc()

@@ -1,13 +1,10 @@
-suppressPackageStartupMessages(library(dplyr))
+# MC results - Box Plots of bias correction factor
 
-setwd("C:\\Users\\frede\\Desktop\\Master Thesis\\Simulation_R")
+library(dplyr)
 
-RESULTS_RDS <- "data_ex_rho_2.rds"
-DATA_DIR    <- "data_ex_rho_2"
-FIG_DIR     <- "figures"
 dgp_type    <- "SAR"
 treated_idx <- 1L
-PLOT_FONT   <- "Times"
+if (!exists("PLOT_FONT")) PLOT_FONT <- "Times"
 
 WHISKER_COEF  <- 1.5
 SHOW_OUTLIERS <- FALSE
@@ -18,8 +15,6 @@ est_labels <- c(sc_classic = "SCM", bc_est = "BC", reg_est = "CR",
 cols <- c(sc_classic = "#E8442A", bsynth_sc = "#E6850F",
           bc_reg_est = "#08519C", bc_est = "#3182BD", reg_est = "#6BAED6")
 
-dir.create(FIG_DIR, recursive = TRUE, showWarnings = FALSE)
-
 .net_tag <- function(dgp_type, ws_k, ws_p, N)
   sprintf("%s_k%d_p%.2f_N%d", dgp_type, ws_k, ws_p, N)
 
@@ -27,8 +22,11 @@ W_cache <- new.env(parent = emptyenv())
 get_W <- function(ws_k, ws_p, N) {
   key <- .net_tag(dgp_type, ws_k, ws_p, N)
   if (!is.null(W_cache[[key]])) return(W_cache[[key]])
-  f <- file.path(DATA_DIR, key, "network_W.rds")
+  f <- file.path(dir_network, paste0(key, ".rds"))
   W <- tryCatch(as.matrix(readRDS(f)), error = function(e) NULL)
+  if (is.null(W))
+    stop("Adjacency matrix not found: ", f,
+         "\n  00_master.R regenerates these; re-run it before this script.")
   W_cache[[key]] <- W
   W
 }
@@ -40,7 +38,7 @@ signed_s <- function(W, rho, donor_idx, treated_idx) {
   as.numeric(rho * solve(diag(J) - rho * W_J, w_J1))
 }
 
-d <- readRDS(RESULTS_RDS)
+d <- readRDS(results_NASC)
 d$T_val <- suppressWarnings(as.numeric(d$T))
 
 n      <- nrow(d)
@@ -126,12 +124,12 @@ legend_glyph <- function(x, y, col) {
 draw_panel <- function(p_val, t_val, show_legend = TRUE) {
   dd <- agg[agg$ws_p == p_val & agg$T_val == t_val, , drop = FALSE]
   if (nrow(dd) == 0) return(invisible(NULL))
-
+  
   if (show_legend)
     graphics::layout(matrix(c(1, 2), nrow = 2), heights = c(6, 0.7))
   graphics::par(mar = c(2.8, 3.8, 0.6, 0.8), mgp = c(2, 0.7, 0),
                 family = PLOT_FONT)
-
+  
   plot(NA, xlim = rho_lim, ylim = c_lim,
        xlab = expression(rho),
        ylab = expression((1 - hat(bolditalic(gamma)) * minute * bolditalic(s))^-1),
@@ -141,7 +139,7 @@ draw_panel <- function(p_val, t_val, show_legend = TRUE) {
                  las = 1, tcl = -0.5)
   graphics::abline(v = rho_levels, h = y_major, col = "grey90", lwd = 0.6)
   graphics::abline(h = 1, col = "grey55", lwd = 0.9, lty = 2)
-
+  
   for (est in est_present) {
     di <- dd[dd$estimator == est, , drop = FALSE]
     di <- di[order(di$rho), , drop = FALSE]
@@ -151,7 +149,7 @@ draw_panel <- function(p_val, t_val, show_legend = TRUE) {
                     col = grDevices::adjustcolor(cols[[est]], alpha.f = 0),
                     lwd = 1.4)
   }
-
+  
   for (est in est_present) {
     di <- dd[dd$estimator == est, , drop = FALSE]
     if (nrow(di) == 0L) next
@@ -170,7 +168,7 @@ draw_panel <- function(p_val, t_val, show_legend = TRUE) {
     }
   }
   graphics::box()
-
+  
   if (show_legend) {
     graphics::par(mar = c(0, 0, 0, 0), family = PLOT_FONT)
     graphics::plot.new()
@@ -197,7 +195,7 @@ draw_panel <- function(p_val, t_val, show_legend = TRUE) {
 
 save_panel <- function(p_val, t_val, show_legend = FALSE) {
   if (!any(agg$ws_p == p_val & agg$T_val == t_val)) return(invisible(NULL))
-  fname <- file.path(FIG_DIR,
+  fname <- file.path(dir_fig,
                      sprintf("bc_factor_box_p%.2f_T%d.pdf", p_val, t_val))
   plot_h <- 2
   dev_h  <- if (show_legend) plot_h * (6 + 0.7) / 6 else plot_h

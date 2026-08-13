@@ -1,4 +1,4 @@
-# Tenary Plots for Network Examples
+# Ternary plots for the network examples
 
 A_1 <- matrix(c(
   0, 1, 1, 1,
@@ -71,11 +71,11 @@ make_Z <- function(theta) {
 draw_panel <- function(Z) {
   plot(NA, xlim = c(-0.05, 1.05), ylim = c(-0.05, 1.0),
        asp = 1, axes = FALSE, xlab = "", ylab = "")
-
+  
   n_colors <- 100
   colors   <- hcl.colors(n_colors, palette = "YlOrRd", rev = TRUE)
   image(xg, yg, Z, col = colors, add = TRUE, useRaster = TRUE)
-
+  
   zmax <- max(Z, na.rm = TRUE)
   zmin <- min(Z, na.rm = TRUE)
   if (is.finite(zmax) && zmax - zmin > 1e-10 * zmax) {
@@ -83,10 +83,10 @@ draw_panel <- function(Z) {
     contour(xg, yg, Z,
             levels = levels, drawlabels = FALSE, col = "black", add = TRUE)
   }
-
+  
   polygon(c(v1[1], v2[1], v3[1]), c(v1[2], v2[2], v3[2]),
           border = "black", lwd = 2)
-
+  
   text(v1[1] - 0.00, v1[2] - 0.05, expression("(1,0,0)"), cex = 2.2)
   text(v2[1] + 0.00, v2[2] - 0.05,  expression("(0,1,0)"), cex = 2.2)
   text(v3[1],        v3[2] + 0.05, expression("(0,0,1)"), cex = 2.2)
@@ -96,10 +96,10 @@ theta_from_A <- function(A) {
   rs      <- rowSums(A)
   rs_safe <- ifelse(rs == 0, 1, rs)
   W       <- A / rs_safe
-
+  
   W_J  <- W[2:4, 2:4]
   w_J1 <- W[2:4, 1]
-
+  
   if (all(w_J1 == 0)) {
     s <- rep(0, 3)
   } else {
@@ -108,8 +108,7 @@ theta_from_A <- function(A) {
   list(s = s, theta = -lambda * abs(s))
 }
 
-outdir <- "figures"
-if (!dir.exists(outdir)) dir.create(outdir, recursive = TRUE)
+outdir <- dir_fig
 
 
 for (i in seq_along(A_list)) {

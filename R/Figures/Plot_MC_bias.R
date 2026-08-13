@@ -1,26 +1,22 @@
 # MC results - Box Plots of bias
 
 library(dplyr)
-setwd("C:\\Users\\frede\\Desktop\\Master Thesis\\Simulation_R")
-
-RESULTS_RDS     <- "data_ex_rho_2.rds"
-RESULTS_RDS_SCM <- "data_ex_rho_scm.rds"
 
 WHISKER_COEF  <- 1.5
 SHOW_OUTLIERS <- FALSE
 
-PLOT_FONT <- "Times"
+if (!exists("PLOT_FONT")) PLOT_FONT <- "Times"
 
 drop_list_cols <- function(d) d[, !vapply(d, is.list, logical(1)), drop = FALSE]
 
-res <- drop_list_cols(readRDS(RESULTS_RDS))
+res <- drop_list_cols(readRDS(results_NASC))
 res$estimator[res$estimator == "plain_est"] <- "bsynth_sc"
 
-if (file.exists(RESULTS_RDS_SCM)) {
-  res_scm <- drop_list_cols(readRDS(RESULTS_RDS_SCM))
-
+if (file.exists(results_SCM)) {
+  res_scm <- drop_list_cols(readRDS(results_SCM))
+  
   est_in <- sort(unique(res_scm$estimator))
-
+  
   if ("sc_classic" %in% est_in) {
     keep <- "sc_classic"
   } else if ("plain_est" %in% est_in) {
@@ -28,14 +24,12 @@ if (file.exists(RESULTS_RDS_SCM)) {
   } else if (length(est_in) == 1L) {
     keep <- est_in
   } else {
-    stop("Cannot identify the SCM estimator in ", RESULTS_RDS_SCM,
-         " - found: ", paste(est_in, collapse = ", "),
-         ". Set `keep` manually.")
+    stop(".")
   }
-
+  
   res_scm <- res_scm[res_scm$estimator == keep, , drop = FALSE]
   res_scm$estimator <- "sc_classic"
-
+  
   res <- res[res$estimator != "sc_classic", , drop = FALSE]
   res <- dplyr::bind_rows(res, res_scm)
 }
@@ -131,18 +125,18 @@ legend_glyph <- function(x, y, col) {
 draw_panel <- function(p_val, t_val, show_legend = TRUE) {
   d <- agg[agg$ws_p == p_val & agg$T_val == t_val, , drop = FALSE]
   if (nrow(d) == 0) return(invisible(NULL))
-
+  
   if (show_legend) layout(matrix(c(1, 2), nrow = 2), heights = c(6, 0.7))
   par(mar = c(2.8, 3.8, 0.6, 0.8), mgp = c(2, 0.7, 0), family = PLOT_FONT)
-
+  
   plot(NA, xlim = rho_lim, ylim = bias_lim,
        xlab = expression(rho), ylab = expression(hat(tau) - tau), xaxt = "n", yaxt = "n")
-
+  
   axis(1, at = rho_levels, labels = formatC(rho_levels, format = "g"))
   axis(2, at = y_at, las = 1)
-
+  
   abline(v = rho_levels, h = y_at, col = "grey90", lwd = 0.6)
-
+  
   for (est in est_present) {
     di <- d[d$estimator == est, , drop = FALSE]
     di <- di[order(di$rho), , drop = FALSE]
@@ -152,7 +146,7 @@ draw_panel <- function(p_val, t_val, show_legend = TRUE) {
     lines(sm$x, sm$y, col = adjustcolor(cols[[est]], alpha.f = 0),
           lwd = 1.4, lty = 1)
   }
-
+  
   for (est in est_present) {
     di <- d[d$estimator == est, , drop = FALSE]
     if (nrow(di) == 0L) next
@@ -170,7 +164,7 @@ draw_panel <- function(p_val, t_val, show_legend = TRUE) {
       }
     }
   }
-
+  
   if (show_legend) {
     par(mar = c(0, 0, 0, 0), family = PLOT_FONT)
     plot.new()
@@ -193,13 +187,9 @@ draw_panel <- function(p_val, t_val, show_legend = TRUE) {
   }
 }
 
-FIG_DIR <- "figures"
-dir.create(FIG_DIR, recursive = TRUE, showWarnings = FALSE)
-
-
 save_panel <- function(p_val, t_val, show_legend = FALSE) {
   if (!any(agg$ws_p == p_val & agg$T_val == t_val)) return(invisible(NULL))
-  fname <- file.path(FIG_DIR,
+  fname <- file.path(dir_fig,
                      sprintf("bias_exo_rho_box_p%.2f_T%d.pdf", p_val, t_val))
   plot_h <- 3
   dev_h  <- if (show_legend) plot_h * (6 + 0.7) / 6 else plot_h

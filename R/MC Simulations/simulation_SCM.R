@@ -1,6 +1,4 @@
-rm(list = ls())
-
-setwd("C:\\Users\\Philines Rettung\\Desktop\\Master Thesis\\Simulation_R")
+# Monte Carlo Simulation - SCM
 
 library(Synth)
 library(dplyr)
@@ -10,19 +8,12 @@ library(tibble)
 library(future.apply)
 library(igraph)
 
-# Path to DGP functions
-DGP_CANDIDATES <- c(
-  "C:\\Users\\Philines Rettung\\Desktop\\Master Thesis\\Simulation_R\\NASC Estimator\\DGP functions.R"
-)
-DGP_PATH <- DGP_CANDIDATES[file.exists(DGP_CANDIDATES)][1]
-source(DGP_PATH)
-
 B <- 1000
 T_seq <- c(30,60,90)
 N_seq <- c(15)
 rho_seq <- c(0.8, 0.6, 0.4, 0.2, 0, -0.2, -0.4, -0.6, -0.8)
 
-# Watts-Strogatz network parameters.
+# Watts-Strogatz network
 k_seq                    <- c(2)
 p_seq                    <- c(0, 0.1, 0.4)
 seed_w                   <- 13
@@ -32,7 +23,6 @@ dgp_type                 <- "SAR"
 treated_idx              <- 1
 beta                     <- c(1.0, 0.5)
 theta                    <- c(0.3, 0.2)
-# Treatment shock distribution: tau_t ~ N(delta_mean, delta_sd^2).
 delta_mean               <- 5
 delta_sd                 <- 1
 sigma_u                  <- 0.5
@@ -41,51 +31,32 @@ x_sd                     <- 1
 X_mean                   <- c(0.0, 0.0)
 twin_target              <- "cleanest"
 
-# Planted weight profile, low |s| -> high |s|. Sums to 1.
+# weights, low |s| -> high |s|
 weight_profile           <- c(0.075, 0.075, 0.150, 0.150, 0.250, 0.300)
 
-# ---- SCM benchmark settings ----
-# v_mode = "equal": pass a flat custom.v to Synth::synth(), which switches OFF
-# the nested V (importance-weight) optimization. Only the inner quadratic
-# program for the donor weights w is solved. synth() row-standardizes the
-# predictor matrix before solving, so a flat V is a uniform weighting of the
-# standardized predictors. Deterministic and much faster; loss.v is then not
-# comparable to a V-optimized run.
+# SCM benchmark settings
 scm_v_mode               <- "equal"
-# In-space placebos -> permutation inference. Needed for coverage.
 scm_placebo              <- TRUE
 scm_ci                   <- 0.95
-# Abadie-style pre-fit screen: drop placebos whose pre-period RMSE exceeds
-# this multiple of the treated unit's. Inf keeps all placebos, which is the
-# ADH (2015) default: the RMSPE *ratio* already normalizes by pre-fit quality,
-# so the screen is redundant once gaps are pre-RMSPE-standardized.
 scm_placebo_prefit_mult  <- Inf
 
-# Tag identifying the inference implementation. Written into every saved
-# replicate; the resume logic below refuses to reuse a cached replicate whose
-# tag differs, so switching inference does not silently mix old and new rows.
 SCM_INFERENCE_VERSION    <- "adh_rmspe_standardized_v2"
 
 # dataset export
-DATA_DIR       <- "data_ex_rho_scm"
-RESULTS_RDS    <- "data_ex_rho_scm.rds"
+DATA_DIR       <- file.path(directory, "output", "data_ex_rho_scm")
+RESULTS_RDS    <- file.path(directory, "output", "data_ex_rho_scm.rds")
 save_datasets  <- TRUE
 save_csv       <- TRUE
 dir.create(DATA_DIR, recursive = TRUE, showWarnings = FALSE)
 
-# estimators: conventional SCM only
+# estimators
 estimators <- list(
   sc_classic = list(engine = "scm")
 )
-# ===========================================================================
-#                              MC SIMULATION
-# ===========================================================================
+# MC simulation
 
-# ---- SCM helpers ----
+# SCM helpers
 
-# One Synth fit. Used both for the real treated unit and for every in-space
-# placebo. Matches on the full pre-treatment outcome path plus the time-varying
-# covariates (the ADH template).
 .synth_one <- function(foo, treated_id, control_ids, pre_times, all_times,
                        first_post, v_mode = "equal") {
   sp <- lapply(pre_times, function(tt) list("Y", tt, "mean"))
@@ -106,11 +77,9 @@ estimators <- list(
       time.plot             = all_times
     )
   ))
-
+  
   sout <- NULL
   if (identical(v_mode, "equal")) {
-    # Uniform importance weights: one entry per predictor row in X1
-    # (the X1/X2 means + one special predictor per pre-period).
     np <- nrow(dprep$X1)
     invisible(utils::capture.output(
       sout <- Synth::synth(dprep, custom.v = rep(1 / np, np))
@@ -118,8 +87,8 @@ estimators <- list(
   } else {
     invisible(utils::capture.output(sout <- Synth::synth(dprep)))
   }
-
-  w   <- sout$solution.w                              # J x 1, rownames = donors
+  
+  w   <- sout$solution.w
   eff <- as.numeric(dprep$Y1plot[, 1]) - as.numeric(dprep$Y0plot %*% w)
   tp  <- as.numeric(rownames(dprep$Y1plot))
   pre_m  <- tp <  first_post
@@ -132,82 +101,47 @@ estimators <- list(
   )
 }
 
-# Benchmark: conventional synthetic control via the Synth package, with
-# inference by the in-space placebo (permutation) test. Each control donor is
-# re-fit as a fake-treated unit (control pool = the other donors; the real
-# treated unit is excluded because its post period is contaminated by the actual
-# treatment). Cost: 1 + (#donors) Synth fits per replicate.
-#
-# Two objects are returned, matching the single-dataset script:
-#
-# (1) RMSPE-ratio permutation p-value, Abadie/Diamond/Hainmueller (2015).
-#     Statistic is r_j = RMSPE_post,j / RMSPE_pre,j; the treated unit IS part
-#     of the reference set, so
-#         p = ( 1 + #{ j : r_j >= r_1 } ) / (J + 1).
-#     NOTE: with J placebos the smallest attainable p-value is 1/(J+1). At
-#     N = 15 that is 1/15 ~ 0.067, so this test can never reject at the 5%
-#     level regardless of effect size. Report it as a rank, not as evidence
-#     of no effect.
-#
-# (2) Confidence interval by inverting the two-sided placebo test on
-#     pre-RMSPE-STANDARDIZED post-period average gaps (Firpo & Possebom 2018
-#     style). Standardizing removes the pre-fit-quality heterogeneity across
-#     placebos that the raw-gap version ignores. Let g_j = att_j / RMSPE_pre,j
-#     over placebos and q_a = quantile(g, a). Under H0: tau = tau_0 the
-#     treated statistic is ( att_hat - tau_0 ) / RMSPE_pre,1, so failing to
-#     reject means q_{a/2} <= (att_hat - tau_0)/RMSPE_pre,1 <= q_{1-a/2}, i.e.
-#         CI = [ att_hat - q_{1-a/2} * RMSPE_pre,1 ,
-#                att_hat - q_{a/2}   * RMSPE_pre,1 ].
-#     The treated unit is NOT in this reference set (it only supplies the
-#     center and the scale), unlike in the p-value above.
-#
-# The legacy unstandardized percentile CI is still computed and returned as
-# att_lower_raw / att_upper_raw so the two can be compared in the same run.
-#
-# Caveat worth carrying into the write-up: the treated unit is fit on all J
-# donors while each placebo is fit on J-1, so RMSPE_pre,1 is systematically
-# smaller than the RMSPE_pre,j it is compared against. This shrinks the
-# interval and pushes toward undercoverage independently of any interference.
+# SCM with in-space placebo inference (ADH 2015; Firpo-Possebom CI)
 fit_conventional_sc <- function(df, donor_idx, treated_id, ci_width = 0.95,
                                 placebo = TRUE, placebo_prefit_mult = Inf,
                                 v_mode = "equal") {
   foo <- as.data.frame(df)
-  foo$id   <- as.numeric(as.character(foo$id))     # dataprep needs numeric
+  foo$id   <- as.numeric(as.character(foo$id))
   foo$time <- as.numeric(as.character(foo$time))
-
+  
   td <- foo[foo$id == treated_id, c("time", "D")]
   td <- td[order(td$time), , drop = FALSE]
   post_times <- td$time[td$D == 1]
   if (length(post_times) == 0L) stop("Synth SCM: no post periods (D==1).")
   first_post <- min(post_times)
-
+  
   all_times <- sort(unique(foo$time))
   pre_times <- all_times[all_times < first_post]
   if (length(pre_times) < 2L) stop("Synth SCM: too few pre periods.")
-
+  
   donor_ids <- as.numeric(donor_idx)
-
-  # ---- treated-unit fit ----
+  
+  # treated-unit fit
   main      <- .synth_one(foo, treated_id, donor_ids, pre_times, all_times,
                           first_post, v_mode = v_mode)
   att_hat   <- main$att
   pre_rmse  <- main$pre_rmse
   post_rmse <- main$post_rmse
-
+  
   w_named   <- as.numeric(main$w); names(w_named) <- rownames(main$w)
   w_aligned <- as.numeric(w_named[as.character(donor_ids)])
-
+  
   ratio_hat <- if (is.finite(pre_rmse) && pre_rmse > 0) post_rmse / pre_rmse else NA_real_
-
-  # ---- in-space placebos -> permutation inference ----
+  
+  # placebos
   att_lower     <- NA_real_; att_upper     <- NA_real_; att_sd <- NA_real_
   att_lower_raw <- NA_real_; att_upper_raw <- NA_real_
   p_value       <- NA_real_
   n_placebo     <- 0L
   if (isTRUE(placebo)) {
-    pl_att  <- numeric(0)   # post-period average gap
-    pl_pre  <- numeric(0)   # pre-period RMSPE
-    pl_post <- numeric(0)   # post-period RMSPE
+    pl_att  <- numeric(0)
+    pl_pre  <- numeric(0)
+    pl_post <- numeric(0)
     for (d in donor_ids) {
       ctrl <- setdiff(donor_ids, d)
       if (length(ctrl) < 2L) next
@@ -219,8 +153,6 @@ fit_conventional_sc <- function(df, donor_idx, treated_id, ci_width = 0.95,
       if (is.null(pl)) next
       if (!is.finite(pl$att) || !is.finite(pl$pre_rmse) ||
           !is.finite(pl$post_rmse)) next
-      # a (near-)perfect pre-fit makes the standardized gap explode; such a
-      # placebo carries no information about the null and is dropped
       if (pl$pre_rmse <= sqrt(.Machine$double.eps)) next
       if (is.finite(placebo_prefit_mult) &&
           pl$pre_rmse > placebo_prefit_mult * pre_rmse) next
@@ -229,11 +161,10 @@ fit_conventional_sc <- function(df, donor_idx, treated_id, ci_width = 0.95,
       pl_post <- c(pl_post, pl$post_rmse)
     }
     n_placebo <- length(pl_att)
-
+    
     if (n_placebo >= 2L) {
       a <- (1 - ci_width) / 2
-
-      # (2) pre-RMSPE-standardized inversion -- the reported interval
+      
       if (is.finite(pre_rmse) && pre_rmse > 0) {
         gs <- pl_att / pl_pre
         qs <- as.numeric(stats::quantile(gs, probs = c(a, 1 - a),
@@ -242,16 +173,13 @@ fit_conventional_sc <- function(df, donor_idx, treated_id, ci_width = 0.95,
         att_upper <- att_hat - qs[1] * pre_rmse
         att_sd    <- stats::sd(gs) * pre_rmse
       }
-
-      # legacy unstandardized percentile CI, retained for comparison
+      
       qr <- as.numeric(stats::quantile(pl_att, probs = c(a, 1 - a),
                                        names = FALSE, type = 7))
       att_lower_raw <- att_hat - qr[2]
       att_upper_raw <- att_hat - qr[1]
     }
-
-    # (1) ADH (2015) RMSPE-ratio p-value; treated unit included in the
-    #     reference set, so p is on the grid k/(n_placebo + 1)
+    
     if (n_placebo >= 1L && is.finite(ratio_hat)) {
       ratios <- pl_post / pl_pre
       ratios <- ratios[is.finite(ratios)]
@@ -260,8 +188,7 @@ fit_conventional_sc <- function(df, donor_idx, treated_id, ci_width = 0.95,
       }
     }
   }
-
-  # normalized to the same shape the row assembly reads
+  
   list(
     att = c(mean = att_hat, sd = att_sd, lower = att_lower, upper = att_upper,
             lower_raw = att_lower_raw, upper_raw = att_upper_raw),
@@ -276,7 +203,7 @@ fit_conventional_sc <- function(df, donor_idx, treated_id, ci_width = 0.95,
   )
 }
 
-# ---- functions ----
+# functions
 extract_weights_aligned <- function(fit_summary, donor_idx) {
   w_tbl <- fit_summary$weights
   if (is.null(w_tbl) || nrow(w_tbl) == 0L) return(NULL)
@@ -328,10 +255,10 @@ dataset_basename <- function(T, rep) {
   sprintf("dataset_T%d_rep%03d", T, rep)
 }
 
-# worker function: one replicate, all estimators
+# worker: one replicate
 run_one_rep <- function(b, cell, W, estimators, dgp_type = "SAR",
                         data_dir = NULL, save_datasets = FALSE, save_csv = TRUE) {
-
+  
   sim <- generate_data_ws_planted(
     W              = W,
     type           = dgp_type,
@@ -352,18 +279,18 @@ run_one_rep <- function(b, cell, W, estimators, dgp_type = "SAR",
     weight_profile = cell$weight_profile
   )
   df <- sim$df
-
+  
   att_true_realized <- mean(sim$true_att)
-
+  
   w_star_donor <- sim$w_star_donor
   donor_idx    <- sim$donor_idx
   s_abs        <- if (!is.null(sim$contam)) sim$contam$s_abs else rep(0, length(donor_idx))
-
+  
   rows <- vector("list", length(estimators))
   for (i in seq_along(estimators)) {
     est_name <- names(estimators)[i]
     cfg      <- estimators[[i]]
-
+    
     t0 <- proc.time()[["elapsed"]]
     fit_ok <- tryCatch({
       s_obj <- switch(cfg$engine,
@@ -384,7 +311,7 @@ run_one_rep <- function(b, cell, W, estimators, dgp_type = "SAR",
     },
     error = function(e) list(s = NULL, ok = FALSE, msg = conditionMessage(e)))
     rt <- proc.time()[["elapsed"]] - t0
-
+    
     base <- data.frame(
       ws_k         = cell$ws_k,
       ws_p         = cell$ws_p,
@@ -398,17 +325,17 @@ run_one_rep <- function(b, cell, W, estimators, dgp_type = "SAR",
       runtime_s    = rt,
       stringsAsFactors = FALSE
     )
-
+    
     if (fit_ok$ok) {
       att    <- fit_ok$s$att
       lo     <- as.numeric(att["lower"])
       hi     <- as.numeric(att["upper"])
       lo_raw <- as.numeric(att["lower_raw"])
       hi_raw <- as.numeric(att["upper_raw"])
-
+      
       w_hat <- extract_weights_aligned(fit_ok$s, donor_idx)
       wmet  <- weight_recovery_metrics(w_hat, w_star_donor, s_abs)
-
+      
       rows[[i]] <- cbind(base, data.frame(
         att_hat           = as.numeric(att["mean"]),
         att_sd            = as.numeric(att["sd"]),
@@ -417,13 +344,11 @@ run_one_rep <- function(b, cell, W, estimators, dgp_type = "SAR",
         covers            = (att_true_realized >= lo) & (att_true_realized <= hi),
         covers_struct     = (cell$delta_mean    >= lo) & (cell$delta_mean    <= hi),
         ci_width          = hi - lo,
-        # legacy unstandardized percentile CI, for the comparison table
         att_lower_raw     = lo_raw,
         att_upper_raw     = hi_raw,
         covers_raw        = (att_true_realized >= lo_raw) & (att_true_realized <= hi_raw),
         covers_struct_raw = (cell$delta_mean    >= lo_raw) & (cell$delta_mean    <= hi_raw),
         ci_width_raw      = hi_raw - lo_raw,
-        # ADH (2015) RMSPE-ratio permutation p-value
         p_value           = fit_ok$s$p_value,
         pre_rmse      = fit_ok$s$pre_rmse,
         post_rmse     = fit_ok$s$post_rmse,
@@ -468,8 +393,7 @@ run_one_rep <- function(b, cell, W, estimators, dgp_type = "SAR",
     }
   }
   out <- dplyr::bind_rows(rows)
-
-  # export this dataset together with its per-draw estimation results
+  
   if (isTRUE(save_datasets) && !is.null(data_dir)) {
     cdir  <- cell_data_dir(data_dir, dgp_type, cell$ws_k, cell$ws_p,
                            cell$N, cell$rho)
@@ -484,17 +408,14 @@ run_one_rep <- function(b, cell, W, estimators, dgp_type = "SAR",
                 row.names = FALSE)
     }
   }
-
+  
   out
 }
 
-# ---- run ----
-# parallel plan
+# run
 try(future:::ClusterRegistry("stop"), silent = TRUE)
 gc()
 
-# No Stan here: Synth fits are cheap in memory, so workers can be pushed harder
-# than in the NASC runs.
 max_workers <- 6L
 n_workers <- min(max_workers, max(1L, parallel::detectCores() - 1L))
 options(future.globals.maxSize = 2 * 1024^3)
@@ -502,7 +423,7 @@ options(future.globals.maxSize = 2 * 1024^3)
 plan(multisession, workers = n_workers)
 cat(sprintf("%d cores\n", n_workers))
 
-# build weight matrices (serial, cheap)
+# build weight matrices
 weights_list <- array(list(),
                       dim = c(length(k_seq), length(p_seq), length(N_seq)))
 
@@ -516,8 +437,7 @@ for (ki in seq_along(k_seq)) {
         seed = seed_w
       )
       weights_list[[ki, pi, j]] <- W_ws
-
-      # persist W; pre-create rho subfolders
+      
       if (save_datasets) {
         net_dir <- file.path(DATA_DIR, .net_tag(dgp_type, k_seq[ki],
                                                 p_seq[pi], N_seq[j]))
@@ -536,7 +456,7 @@ for (ki in seq_along(k_seq)) {
   }
 }
 
-# main loop: cells serial, replicates parallel
+# main loop
 results <- list()
 
 mc_t_start <- proc.time()[["elapsed"]]
@@ -545,7 +465,7 @@ for (ki in seq_along(k_seq)) {
   for (pi in seq_along(p_seq)) {
     for (j in seq_along(N_seq)) {
       W_cell <- weights_list[[ki, pi, j]]
-
+      
       for (t in seq_along(T_seq)) {
         for (r in seq_along(rho_seq)) {
           cell <- list(
@@ -570,19 +490,18 @@ for (ki in seq_along(k_seq)) {
             scm_ci                  = scm_ci,
             scm_placebo_prefit_mult = scm_placebo_prefit_mult
           )
-
+          
           cat(sprintf("Cell k=%d p=%.2f j=%d t=%d r=%d : %d reps on %d cores\n",
                       k_seq[ki], p_seq[pi], j, t, r, B, n_workers))
           t_cell <- proc.time()[["elapsed"]]
-
+          
           cell_rows <- tryCatch(
             future_lapply(
               seq_len(B),
               function(b) {
                 if (!exists("generate_data_ws_planted", envir = globalenv(), inherits = FALSE)) {
-                  source(DGP_PATH)
+                  source(dgp_path)
                 }
-                # resume: reuse a rep already saved to disk, skip recompute
                 if (isTRUE(save_datasets)) {
                   rp <- file.path(
                     cell_data_dir(DATA_DIR, dgp_type, cell$ws_k, cell$ws_p, cell$N, cell$rho),
@@ -590,9 +509,6 @@ for (ki in seq_along(k_seq)) {
                   )
                   if (file.exists(rp)) {
                     prev <- tryCatch(readRDS(rp), error = function(e) NULL)
-                    # only reuse a cached rep computed under the CURRENT
-                    # inference; older caches are recomputed rather than
-                    # silently mixed in with incompatible columns
                     if (is.list(prev) && !is.null(prev$results) &&
                         identical(prev$scm_inference, SCM_INFERENCE_VERSION)) {
                       return(prev$results)
@@ -606,7 +522,7 @@ for (ki in seq_along(k_seq)) {
               future.seed     = 1234L,
               future.packages = c("Synth", "dplyr", "tidyr"),
               future.globals  = c("run_one_rep", "cell", "W_cell",
-                                  "estimators", "dgp_type", "DGP_PATH",
+                                  "estimators", "dgp_type", "dgp_path",
                                   "extract_weights_aligned",
                                   "weight_recovery_metrics",
                                   ".synth_one", "fit_conventional_sc",
@@ -620,9 +536,9 @@ for (ki in seq_along(k_seq)) {
               stop("MC error", call. = FALSE)
             }
           )
-
+          
           cat(sprintf("%.1fs\n", proc.time()[["elapsed"]] - t_cell))
-
+          
           results[[length(results) + 1L]] <- dplyr::bind_rows(cell_rows)
           saveRDS(dplyr::bind_rows(results), RESULTS_RDS)
           gc()

@@ -1,10 +1,6 @@
 # MC results - Box Plots of estimated synthetic control contamination
 
 library(dplyr)
-setwd("C:\\Users\\frede\\Desktop\\Master Thesis\\Simulation_R")
-
-RESULTS_RDS     <- "data_ex_rho_2.rds"
-RESULTS_RDS_SCM <- "data_ex_rho_scm.rds"
 
 W_COL       <- "w_hat"
 S_COL       <- "s_abs"
@@ -15,7 +11,7 @@ WHISKER_COEF  <- 1.5
 SHOW_OUTLIERS <- FALSE
 SHOW_ORACLE   <- FALSE
 
-PLOT_FONT <- "Times"
+if (!exists("PLOT_FONT")) PLOT_FONT <- "Times"
 
 weighted_contam <- function(w, s, idx) {
   if (is.null(w) || is.null(s)) return(NA_real_)
@@ -36,16 +32,16 @@ load_contam <- function(path, w_col = W_COL, s_col = S_COL,
   d[, !vapply(d, is.list, logical(1)), drop = FALSE]
 }
 
-res <- load_contam(RESULTS_RDS)
+res <- load_contam(results_NASC)
 res$estimator[res$estimator == "plain_est"] <- "bsynth_sc"
 
-if (file.exists(RESULTS_RDS_SCM)) {
-  rs <- load_contam(RESULTS_RDS_SCM)
+if (file.exists(results_SCM)) {
+  rs <- load_contam(results_SCM)
   est_in <- sort(unique(rs$estimator))
   keep <- if ("sc_classic" %in% est_in) "sc_classic"
   else if ("plain_est" %in% est_in) "plain_est"
   else if (length(est_in) == 1L) est_in
-  else stop("Cannot identify SCM estimator: ", paste(est_in, collapse = ", "))
+  else stop(".")
   rs <- rs[rs$estimator == keep, , drop = FALSE]; rs$estimator <- "sc_classic"
   res <- res[res$estimator != "sc_classic", , drop = FALSE]
   res <- dplyr::bind_rows(res, rs)
@@ -138,35 +134,35 @@ legend_glyph <- function(x, y, col) {
 draw_panel <- function(p_val, t_val, show_legend = TRUE) {
   d <- agg[agg$ws_p == p_val & agg$T_val == t_val, , drop = FALSE]
   if (nrow(d) == 0) return(invisible(NULL))
-
+  
   if (show_legend) layout(matrix(c(1, 2), nrow = 2), heights = c(6, 0.7))
   par(mar = c(2.8, 3.8, 0.6, 0.8), mgp = c(2, 0.7, 0), family = PLOT_FONT)
-
+  
   plot(NA, xlim = rho_lim, ylim = c_lim,
        xlab = expression(rho),
        ylab = expression(hat(bolditalic(gamma)) * minute * abs(bolditalic(s))),
        xaxt = "n", yaxt = "n")
-
+  
   axis(1, at = rho_levels, labels = formatC(rho_levels, format = "g"))
-
+  
   y_labeled <- c(0.0, 0.1, 0.2, 0.3, 0.4)
   y_unlabeled <- setdiff(y_at, y_labeled)
-
+  
   axis(2, at = y_labeled, labels = y_labeled, las = 1, tcl = -0.5)
-
+  
   if (length(y_unlabeled) > 0) {
     axis(2, at = y_unlabeled, labels = FALSE, tcl = -0.25)
   }
-
+  
   abline(v = rho_levels, h = y_at, col = "grey90", lwd = 0.6)
-
+  
   if (has_oracle) {
     o <- agg_or[agg_or$ws_p == p_val & agg_or$T_val == t_val, ]
     o <- o[order(o$rho), ]
     sm <- smooth_line(o$rho, o$m)
     lines(sm$x, sm$y, col = "grey45", lwd = 1.4, lty = 2)
   }
-
+  
   for (est in est_present) {
     di <- d[d$estimator == est, , drop = FALSE]
     di <- di[order(di$rho), , drop = FALSE]
@@ -176,7 +172,7 @@ draw_panel <- function(p_val, t_val, show_legend = TRUE) {
     lines(sm$x, sm$y, col = adjustcolor(cols[[est]], alpha.f = 0),
           lwd = 1.4, lty = 1)
   }
-
+  
   for (est in est_present) {
     di <- d[d$estimator == est, , drop = FALSE]
     if (nrow(di) == 0L) next
@@ -194,7 +190,7 @@ draw_panel <- function(p_val, t_val, show_legend = TRUE) {
       }
     }
   }
-
+  
   if (show_legend) {
     par(mar = c(0, 0, 0, 0), family = PLOT_FONT)
     plot.new()
@@ -217,12 +213,9 @@ draw_panel <- function(p_val, t_val, show_legend = TRUE) {
   }
 }
 
-FIG_DIR <- "figures"
-dir.create(FIG_DIR, recursive = TRUE, showWarnings = FALSE)
-
 save_panel <- function(p_val, t_val, show_legend = FALSE) {
   if (!any(agg$ws_p == p_val & agg$T_val == t_val)) return(invisible(NULL))
-  fname <- file.path(FIG_DIR,
+  fname <- file.path(dir_fig,
                      sprintf("contam_sc_box_p%.2f_T%d.pdf", p_val, t_val))
   plot_h <- 3
   dev_h  <- if (show_legend) plot_h * (6 + 0.7) / 6 else plot_h

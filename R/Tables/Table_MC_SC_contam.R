@@ -4,19 +4,11 @@ library(dplyr)
 library(tibble)
 library(scales)
 
-setwd("C:\\Users\\frede\\Desktop\\Master Thesis\\Simulation_R")
-
-RESULTS_RDS     <- "data_ex_rho_2.rds"
-RESULTS_RDS_SCM <- "data_ex_rho_scm.rds"
-TABLE_DIR       <- "tables"
-
 LOG_STEEPNESS   <- 20 #for log color scale
 
 W_COL   <- "w_hat"
 S_COL   <- "s_abs"
 IDX_COL <- "donor_idx"
-
-dir.create(TABLE_DIR, showWarnings = FALSE, recursive = TRUE)
 
 weighted_contam <- function(w, s, idx) {
   if (is.null(w) || is.null(s)) return(NA_real_)
@@ -34,22 +26,22 @@ load_contam <- function(path, w_col = W_COL, s_col = S_COL, idx_col = IDX_COL) {
   d[, !vapply(d, is.list, logical(1)), drop = FALSE]
 }
 
-res <- load_contam(RESULTS_RDS)
+res <- load_contam(results_NASC)
 res$estimator[res$estimator == "plain_est"] <- "bsynth_sc"
 
-if (file.exists(RESULTS_RDS_SCM)) {
-  res_scm <- load_contam(RESULTS_RDS_SCM)
+if (file.exists(results_SCM)) {
+  res_scm <- load_contam(results_SCM)
   est_in  <- sort(unique(res_scm$estimator))
-
+  
   keep <- if ("sc_classic" %in% est_in) "sc_classic"
   else if ("plain_est" %in% est_in) "plain_est"
   else if (length(est_in) == 1L) est_in
-  else stop("Cannot identify the SCM estimator in ", RESULTS_RDS_SCM,
+  else stop("Cannot identify the SCM estimator in ", results_SCM,
             " - found: ", paste(est_in, collapse = ", "), ". Set `keep` manually.")
-
+  
   res_scm <- res_scm[res_scm$estimator == keep, , drop = FALSE]
   res_scm$estimator <- "sc_classic"
-
+  
   res <- res[res$estimator != "sc_classic", , drop = FALSE]
   res <- dplyr::bind_rows(res, res_scm)
 }
@@ -94,21 +86,21 @@ est_levels <- unname(report_labels[report_estimators[report_estimators %in% perf
 
 
 build_contam_table <- function(perf, est_levels,
-                               output_tex = file.path(TABLE_DIR, "nasc_estimated_contamination.tex"),
+                               output_tex = file.path(dir_table, "nasc_estimated_contamination.tex"),
                                digits = 3L) {
-
+  
   p_levels   <- sort(unique(perf$ws_p))
   rho_levels <- sort(unique(perf$rho))
   T_levels   <- sort(unique(perf$T))
   n_est <- length(est_levels); n_rho <- length(rho_levels); n_T <- length(T_levels)
   hrule <- "\\hline"
-
+  
   perf$.hex <- rep("FFFFFF", nrow(perf))
   for (Tv in T_levels) {
     idx <- which(perf$T == Tv)
     perf$.hex[idx] <- shade_values(perf$contamination[idx])
   }
-
+  
   get_val <- function(pv, rv, Tv, est) {
     v <- perf$contamination[perf$ws_p == pv & perf$rho == rv &
                               perf$T == Tv & perf$estimator_label == est]
@@ -119,20 +111,20 @@ build_contam_table <- function(perf, est_levels,
                      perf$T == Tv & perf$estimator_label == est]
     if (length(h) == 0) "FFFFFF" else h[1]
   }
-
+  
   est_block <- paste(sapply(est_levels, escape_tex), collapse = " & ")
-
+  
   header_cells <- sapply(T_levels, function(Tv)
     sprintf("\\multicolumn{%d}{c}{$T = %d$}", n_est, as.integer(Tv)))
   top_row <- paste0(" & & ", paste(header_cells, collapse = " & & "), " \\\\")
-
+  
   cline_row <- paste(sapply(seq_len(n_T), function(i) {
     start <- 3L + (i - 1L) * (n_est + 1L); end <- start + n_est - 1L
     sprintf("\\cline{%d-%d}", start, end)
   }), collapse = "")
-
+  
   est_row <- paste0(" & $\\rho$ & ", paste(rep(est_block, n_T), collapse = " & & "), " \\\\")
-
+  
   body <- character(0)
   for (pi in seq_along(p_levels)) {
     pv <- p_levels[pi]
@@ -155,10 +147,10 @@ build_contam_table <- function(perf, est_levels,
     }
     if (pi < length(p_levels)) body <- c(body, hrule)
   }
-
+  
   block_spec <- strrep("c", n_est)
   col_spec   <- paste0("ll", block_spec, strrep(paste0("c", block_spec), n_T - 1L))
-
+  
   tex <- c(
     "\\begin{sidewaystable}[htbp]",
     "\\centering",
@@ -176,10 +168,10 @@ build_contam_table <- function(perf, est_levels,
     "\\end{sidewaystable}",
     ""
   )
-
+  
   writeLines(tex, output_tex)
   invisible(output_tex)
 }
 
 build_contam_table(perf, est_levels,
-                   output_tex = file.path(TABLE_DIR, "MC_result_exogen_rho_contam.tex"))
+                   output_tex = file.path(dir_table, "MC_result_exogen_rho_contam.tex"))
