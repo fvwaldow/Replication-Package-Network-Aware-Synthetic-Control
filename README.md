@@ -8,7 +8,7 @@ This repository accompanies the study **Network-Aware Synthetic Control — Bias
 1.  For replication of the studies result open `nasc_replication.Rproj` or set the working directory.
 2.  Install the accompanying `nasc` R-package via `r pak::pkg_install("fvwaldow/nasc")`r and additionally `Synth`, `rstan`, `StanHeaders`, `igraph`, and `future.apply`.
 3.  Run `master.R` for replication of Tables and Figures using the simulation results saved in `data/`.
-4.  For a re-run of the MC simulation , run the files `simulation_BAYESIAN.R` and `simulation_SCM.R`, with `master.R` being sourced first. Both write to `output/` and never overwrite the shipped results in `data/`. Even though the simulation runs in parallel, the Bayesian estimations are computational heavy and take some considerable time.
+4.  For a re-run of the MC simulation , run the files `simulation_BAYESIAN.R` and `simulation_SCM.R`, with `master.R` being sourced first. Both write to `output/` and never overwrite the initial results in `data/`. Even though the simulation runs in parallel, in particular the Bayesian estimations are computational heavy and take some considerable runtime.
 
 
 ## Folder Structure

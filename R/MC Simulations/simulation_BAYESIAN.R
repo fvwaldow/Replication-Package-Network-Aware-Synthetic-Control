@@ -56,6 +56,7 @@ estimators <- list(
   reg_est    = list(engine = "nasc", bias_correction = FALSE, nasc_penalty = TRUE),
   bc_reg_est = list(engine = "nasc", bias_correction = TRUE,  nasc_penalty = TRUE)
 )
+
 # MC simulation
 
 # functions

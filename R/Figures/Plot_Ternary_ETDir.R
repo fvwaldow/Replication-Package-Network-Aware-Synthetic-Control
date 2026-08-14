@@ -25,11 +25,10 @@ A_4 <- matrix(c(
   0, 0, 1, 0
 ), nrow = 4, byrow = TRUE)
 
-A_list <- list(A_1, A_2, A_3, A_4)
-
-rho    <- 0.2
-lambda <- 10
-alpha  <- c(1.2, 1.2, 1.2)
+A_list   <- list(A_1, A_2, A_3, A_4)
+rho_list <- c(A = 0.2, B = 0.8)
+lambda   <- 10
+alpha    <- c(1.2, 1.2, 1.2)
 
 log_dens_etd <- function(x1, x2, alpha, theta) {
   x3 <- 1 - x1 - x2
@@ -37,10 +36,9 @@ log_dens_etd <- function(x1, x2, alpha, theta) {
   sum((alpha - 1) * log(c(x1, x2, x3))) + sum(theta * c(x1, x2, x3))
 }
 
-v1 <- c(0, 0)             # x = (1,0,0)
-v2 <- c(1, 0)             # x = (0,1,0)
-v3 <- c(0.5, sqrt(3)/2)   # x = (0,0,1)
-
+v1 <- c(0, 0)
+v2 <- c(1, 0)
+v3 <- c(0.5, sqrt(3)/2)
 
 nx <- 1000; ny <- 1000
 xg <- seq(0, 1, length.out = nx)
@@ -88,11 +86,11 @@ draw_panel <- function(Z) {
           border = "black", lwd = 2)
   
   text(v1[1] - 0.00, v1[2] - 0.05, expression("(1,0,0)"), cex = 2.2)
-  text(v2[1] + 0.00, v2[2] - 0.05,  expression("(0,1,0)"), cex = 2.2)
+  text(v2[1] + 0.00, v2[2] - 0.05, expression("(0,1,0)"), cex = 2.2)
   text(v3[1],        v3[2] + 0.05, expression("(0,0,1)"), cex = 2.2)
 }
 
-theta_from_A <- function(A) {
+theta_from_A <- function(A, rho) {
   rs      <- rowSums(A)
   rs_safe <- ifelse(rs == 0, 1, rs)
   W       <- A / rs_safe
@@ -110,14 +108,16 @@ theta_from_A <- function(A) {
 
 outdir <- dir_fig
 
-
-for (i in seq_along(A_list)) {
-  A   <- A_list[[i]]
-  out <- theta_from_A(A)
-  Z   <- make_Z(out$theta)
-  pdf_path <- file.path(outdir, sprintf("etd_A%d.pdf", i))
-  pdf(pdf_path, width = 6, height = 5.5)
-  par(mar = c(0.2, 0.2, 0, 0.2))
-  draw_panel(Z)
-  dev.off()
+for (k in seq_along(rho_list)) {
+  lab <- names(rho_list)[k]
+  rho <- rho_list[[k]]
+  for (i in seq_along(A_list)) {
+    out <- theta_from_A(A_list[[i]], rho)
+    Z   <- make_Z(out$theta)
+    pdf(file.path(outdir, sprintf("etd_%s%d.pdf", lab, i)),
+        width = 6, height = 5.5)
+    par(mar = c(0.2, 0.2, 0, 0.2))
+    draw_panel(Z)
+    dev.off()
+  }
 }
