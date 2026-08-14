@@ -42,10 +42,8 @@ This repository accompanies the study **Network-Aware Synthetic Control — Bias
     └── sessionInfo.txt                   software environment
 ```
 
----
+
 
 All R files were run on R version 4.4.2 on Windows 11 x64. 
-
----
 
 Frederik von Waldow
