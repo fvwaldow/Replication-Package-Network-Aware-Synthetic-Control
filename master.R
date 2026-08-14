@@ -13,8 +13,8 @@ dir_table   <- file.path(dir_out, "tables")
 for (d in c(dir_network, dir_fig, dir_table))
   dir.create(d, recursive = TRUE, showWarnings = FALSE)
 
-results_NASC     <- file.path(dir_data, "data_ex_rho_2.rds")
-results_SCM <- file.path(dir_data, "data_ex_rho_scm.rds")
+results_NASC <- file.path(dir_data, "mc_result_BAYESIAN.rds")
+results_SCM  <- file.path(dir_data, "mc_result_SCM.rds")
 
 dgp_path <- file.path(dir_R, "dgp_functions.R")
 source(dgp_path)

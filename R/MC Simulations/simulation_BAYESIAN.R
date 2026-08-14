@@ -43,8 +43,8 @@ stan_warmup              <- 500L
 stan_control             <- list(adapt_delta = 0.95, max_treedepth = 10)
 
 # dataset export
-DATA_DIR       <- file.path(directory, "output", "data_ex_rho_2")
-RESULTS_RDS    <- file.path(directory, "output", "data_ex_rho_2.rds")
+DATA_DIR    <- file.path(directory, "output", "mc_result_BAYESIAN")
+RESULTS_RDS <- file.path(directory, "output", "mc_result_BAYESIAN.rds")
 save_datasets  <- TRUE
 save_csv       <- TRUE
 dir.create(DATA_DIR, recursive = TRUE, showWarnings = FALSE)

@@ -43,8 +43,8 @@ scm_placebo_prefit_mult  <- Inf
 SCM_INFERENCE_VERSION    <- "adh_rmspe_standardized_v2"
 
 # dataset export
-DATA_DIR       <- file.path(directory, "output", "data_ex_rho_scm")
-RESULTS_RDS    <- file.path(directory, "output", "data_ex_rho_scm.rds")
+DATA_DIR    <- file.path(directory, "output", "mc_result_SCM")
+RESULTS_RDS <- file.path(directory, "output", "mc_result_SCM.rds")
 save_datasets  <- TRUE
 save_csv       <- TRUE
 dir.create(DATA_DIR, recursive = TRUE, showWarnings = FALSE)

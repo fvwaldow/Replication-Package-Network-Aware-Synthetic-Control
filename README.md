@@ -33,8 +33,8 @@ This repository accompanies the study **Network-Aware Synthetic Control — Bias
 │       ├── Table_MC_results.R            bias / RMSE / coverage
 │       └── Table_MC_SC_contam.R          estimated contamination
 ├── data/
-│   ├── data_ex_rho_2.rds                 MC: BSCM / BC / CR / NASC
-│   ├── data_ex_rho_scm.rds               MC: SCM
+│   ├── mc_result_BAYESIAN.rds            MC: BSCM / BC / CR / NASC
+│   ├── mc_result_SCM.rds                 MC: SCM
 │   └── networks/                         adjacency matrices
 └── output/                     
     ├── figures/
