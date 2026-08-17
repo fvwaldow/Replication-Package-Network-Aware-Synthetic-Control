@@ -809,7 +809,8 @@ save_fig("example_indirect.pdf",
          nascPlot(mods, panels = "indirect",
                   indirect_models = c("BC", "NASC", "CR"),
                   indirect_legend = "all",
-                  true_indirect = ind_true))
+                  true_indirect = ind_true,
+                  indirect_pre = "placebo"))
 save_fig("example_weights.pdf",
          nascWeightSCM(list("BSCM" = fit_plain, "NASC" = fit_nasc),
                        synth_w = scm_synth$weights, true_w = true_w),
